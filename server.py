@@ -26,6 +26,7 @@ class Conn(threading.Thread):
     self.passwd = False
 
   def pocess_command(self, command, args):
+    command = command.upper()
     if command == 'USER':
       self.username = args
       if self.user:
