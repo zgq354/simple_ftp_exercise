@@ -140,7 +140,8 @@ class Conn(threading.Thread):
     self.message(150, 'start sending data')
     # 把默认的 LF 转换为 CRLF
     lines = result.split('\n')
-    s.send('\r\n'.join(lines.append('')).encode('utf-8'))
+    lines.append('')
+    s.send('\r\n'.join(lines).encode('utf-8'))
     # 传完即关闭连接
     self.data_fd.close()
     self.message(226, 'Transfer complete')
