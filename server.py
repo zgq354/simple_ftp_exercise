@@ -22,6 +22,7 @@ users = [
   }
 ]
 
+# 带锁的计数器
 class Counter():
   def __init__(self):
     self.connect_count = 0
@@ -45,11 +46,13 @@ class Counter():
 
 counter = Counter()
 
+# 处理路径的类
 class Path():
   def __init__(self, base):
     self.base = base
     self.wd = '/'
 
+  # 切换工作目录
   def cwd(self, new_wd):
     if new_wd[:1] == '/':
       self.wd = new_wd
@@ -72,13 +75,15 @@ class Path():
         self.wd += new_wd
     print('wd:', self.wd)
   
+  # 获得相对路径
   def get(self):
     return self.wd
 
+  # 获取绝对路径
   def getAbs(self):
     return self.base + self.wd
 
-
+# FTP 连接处理类
 class Conn(threading.Thread):
   def __init__(self, fd, addr):
     threading.Thread.__init__(self)
@@ -91,6 +96,7 @@ class Conn(threading.Thread):
     self.passwd = False
     self.wd = Path(os.getcwd())
 
+  # FTP 命令处理
   def pocess_command(self, cmd, args):
     cmd = cmd.upper()
     # print(cmd, args)
@@ -116,26 +122,30 @@ class Conn(threading.Thread):
     elif cmd == 'PASV':
       if self.need_login():
         self.init_datafd()
-      pass
     elif cmd == 'LIST':
       if self.need_login():
         self.send_list()
-      pass
+    elif cmd == 'MKD':
+      if self.need_login():
+        pass
     else:
       self.message(500, 'Syntax error, command unrecognized.')
-  
+
+  # 列出文件夹
   def send_list(self):
     s, addr = self.data_fd.accept()
     print('data: send to ', addr)
+    # 调用 ls 命令获得
     result = os.popen('ls -al %s' % self.wd.getAbs()).read()
-    # LF to CRLF
-    lines = result.split('\n')
     self.message(150, 'start sending data')
-    for line in lines:
-      s.send((line + '\r\n').encode('utf-8'))
+    # 把默认的 LF 转换为 CRLF
+    lines = result.split('\n')
+    s.send('\r\n'.join(lines.append('')).encode('utf-8'))
+    # 传完即关闭连接
     self.data_fd.close()
     self.message(226, 'Transfer complete')
 
+  # 初始化数据连接
   def init_datafd(self):
     try:
       self.data_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -147,12 +157,14 @@ class Conn(threading.Thread):
     except:
       self.message(500, 'Failed create data socket')
 
+  # 检查是否登录
   def need_login(self):
     if not self.user:
       self.message(530, 'Log in with USER and PASS first.')
       return False
     return True
 
+  # 登录
   def login(self):
     if not self.username:
       self.message(503, 'Login with USER first.')
@@ -174,6 +186,7 @@ class Conn(threading.Thread):
         self.message(230, 'Login successful.')
         pass
 
+  # 返回消息
   def message(self, code, data):
     print('reply:', code, data)
     self.fd.send(("%d %s\r\n" % (code, data)).encode('utf-8'))
@@ -192,6 +205,7 @@ class Conn(threading.Thread):
       if raw[-2:] != '\r\n':
         continue
       print('client:', raw[:-2])
+      # 解析 FTP 命令
       raw = raw[:-2]
       command = raw.split(' ')[0]
       args = raw[(len(command) + 1):]
@@ -211,6 +225,8 @@ print('Waiting for connect...')
 while True:
   # 接受连接
   sock, addr = s.accept()
+  # 初始化对应的工作线程
   t = Conn(sock, addr)
-  counter.increase()
   t.start()
+  # 计数器加一
+  counter.increase()
