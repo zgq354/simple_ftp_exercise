@@ -127,7 +127,18 @@ class Conn(threading.Thread):
         self.send_list()
     elif cmd == 'MKD':
       if self.need_login():
-        pass
+        path = Path(os.getcwd())
+        path.cwd(self.wd.wd)
+        path.cwd(args)
+        os.makedirs(path.getAbs(), exist_ok=True)
+        self.message(257, "\"%s\" directory created" % path.wd)
+    elif cmd == 'RMD':
+      if self.need_login():
+        path = Path(os.getcwd())
+        path.cwd(self.wd.wd)
+        path.cwd(args)
+        os.rmdir(path.getAbs())
+        self.message(250, "\"%s\" directory removed" % path.wd)
     else:
       self.message(500, 'Syntax error, command unrecognized.')
 
