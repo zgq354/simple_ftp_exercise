@@ -16,6 +16,29 @@ users = [
   }
 ]
 
+class Counter():
+  def __init__(self):
+    self.connect_count = 0
+    self.counter_lock = threading.Lock()
+
+  def increase(self):
+    self.counter_lock.acquire()
+    try:
+      self.connect_count += 1
+    finally:
+      self.counter_lock.release()
+    print("%d connections" % self.connect_count)
+
+  def decrease(self):
+    self.counter_lock.acquire()
+    try:
+      self.connect_count -= 1
+    finally:
+      self.counter_lock.release()
+    print("%d connections" % self.connect_count)
+
+counter = Counter()
+
 class Conn(threading.Thread):
   def __init__(self, fd):
     threading.Thread.__init__(self)
@@ -83,6 +106,7 @@ class Conn(threading.Thread):
       # process ftp command
       self.pocess_command(command, args)
     print('Close connection')
+    counter.decrease()
     self.running = False
     self.fd.close()
 
@@ -95,4 +119,5 @@ while True:
   # 接受连接
   sock, addr = s.accept()
   t = Conn(sock)
+  counter.increase()
   t.start()
