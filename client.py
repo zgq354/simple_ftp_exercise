@@ -7,11 +7,126 @@ class FTPSession(object):
   def __init__(self):
     self.c_socket = False
     self.working_directory = False
+    self.local_wd = Path(os.getcwd())
+    self.data_fd = False
     self.c_type = 'A'
+
+  # 删除文件
+  def delete(self, file):
+    self.send('DELE', file)
+    self.get_result()
+
+  # 上传文件
+  def stor(self, file):
+    p = Path(self.local_wd.wd)
+    p.cwd(file)
+    if not os.path.exists(p.wd):
+      self.log('File %s not exist.' % p.wd, 3)
+      return
+    # PASV 获得请求端口
+    self.send('PASV')
+    code, text = self.get_result()
+    if code == 227:
+      host, port = self.parse_addr(text)
+      try:
+        self.data_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.data_fd.connect((host, port))
+        self.send('STOR', file)
+        code = self.get_result()[0]
+        if code == 150:
+          with open(p.wd, 'rb') as f:
+            while True:
+              data = f.read(2048)
+              if not data:
+                break
+              self.data_fd.send(data)
+          # 传完即关闭连接
+          self.data_fd.close()
+          self.get_result()
+          self.log('File %s uploaded' % file, 2)
+      except Exception as e:
+        self.log(e, 3)
+
+  # 返回文件
+  def retr(self, file):
+    # PASV 获得请求端口
+    self.send('PASV')
+    code, text = self.get_result()
+    if code == 227:
+      host, port = self.parse_addr(text)
+      try:
+        self.data_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.data_fd.connect((host, port))
+        self.send('RETR', file)
+        code = self.get_result()[0]
+        if code == 150:
+          p = Path(self.local_wd.wd)
+          p.cwd(file)
+          print(p.wd)
+          with open(p.wd, 'wb') as f:
+            while True:
+              data = self.data_fd.recv(2048)
+              if not data:
+                break
+              f.write(data)
+          # 传完即关闭连接
+          self.data_fd.close()
+          self.get_result()
+          self.log('File %s saved to %s' % (file, self.local_wd.wd), 2)
+      except Exception as e:
+        self.log(e, 3)
+
+  # 设置本地工作目录
+  def lcd(self, path):
+    if not path:
+      path = os.getcwd()
+    p = Path(os.getcwd())
+    p.cwd(self.local_wd.wd)
+    p.cwd(path)
+    if not os.path.isdir(p.getAbs()):
+      self.log('No such directory', 3)
+    else:
+      self.local_wd.cwd(path)
+      self.log('Local directory now %s' % self.local_wd.wd, 2)
+
+  # 删除文件夹
+  def rmdir(self, dirname):
+    self.send('RMD', dirname)
+    self.get_result()
+
+  # 创建文件夹
+  def mkdir(self, dirname):
+    self.send('MKD', dirname)
+    self.get_result()
+
+  # 列出目录
+  def ls(self):
+    # PASV 获得请求端口
+    self.send('PASV')
+    code, text = self.get_result()
+    if code == 227:
+      host, port = self.parse_addr(text)
+      try:
+        self.data_fd = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.data_fd.connect((host, port))
+        self.send('LIST')
+        code = self.get_result()[0]
+        if code == 150:
+          raw = ''
+          while True:
+            recv = self.data_fd.recv(2048)
+            if not recv:
+              break
+            raw += recv.decode('utf-8')
+          self.data_fd.close()
+          self.get_result()
+          print(raw, end='')
+      except Exception as e:
+        self.log(e, 3)
 
   # 获得工作目录
   def get_wd(self):
-    self.send('PWD', '')
+    self.send('PWD')
     code, text = self.get_result()
     if code == 257:
       self.working_directory = Path(self.parse_path(text), os.getcwd())
@@ -79,7 +194,7 @@ class FTPSession(object):
     print("[%s] %s" % (t[ty], text))
 
   # 发送命令
-  def send(self, command, args):
+  def send(self, command, args = ''):
     self.c_socket.send(("%s %s\r\n" % (command, args)).encode('utf-8'))
 
   # 初始化连接
@@ -126,12 +241,14 @@ class FTPSession(object):
 
   # 解析消息中的IP地址
   def parse_addr(self, string):
-    addr_match = re.match(r'(\(.*\))', string)
+    # print(string)
+    addr_match = re.findall(r'(\(.*\))', string)[0]
+    # print(addr_match)
     ip = ''
     port = 0
     if addr_match:
       try:
-        arr = addr_match.group(1)[1:-1].split(',')
+        arr = addr_match[1:-1].split(',')
         ip = '.'.join(arr[:4])
         port = (int(arr[4]) << 8) + int(arr[5])
       finally:
@@ -172,7 +289,7 @@ class Path():
         self.wd += '/' + new_wd
       else:
         self.wd += new_wd
-    print('wd:', self.wd)
+    # print('wd:', self.wd)
   
   # 获得相对路径
   def get(self):
@@ -187,16 +304,58 @@ class CommandHandler():
   def __init__(self):
     self.handler = {}
     self.session = False
-    # 开始注册命令处理函数
+    # 注册命令处理函数
     self.register('connect', self.c_connect)
     self.register('conn', self.c_connect)
     self.register('close', self.c_close)
     self.register('type', self.c_type)
     self.register('pwd', self.c_pwd)
     self.register('cd', self.c_cd)
+    self.register('ls', self.c_ls)
+    self.register('mkdir', self.c_mkdir)
+    self.register('rmdir', self.c_rmdir)
+    self.register('lcd', self.c_lcd)
+    self.register('get', self.c_get)
+    self.register('put', self.c_put)
+    self.register('delete', self.c_delete)
     self.register('exit', self.c_exit)
     self.register('echo', print)
     self.register('cat', lambda a: print(r"flag{1t's_a_b1ackd00r}") if a == 'flag.txt' else False)
+
+  # 下载文件
+  def c_get(self, args):
+    if self.need_login():
+      self.session.retr(args)
+
+  # 上传文件
+  def c_put(self, args):
+    if self.need_login():
+      self.session.stor(args)
+
+  # 删除文件
+  def c_delete(self, args):
+    if self.need_login():
+      self.session.delete(args)
+
+  # 创建文件夹
+  def c_lcd(self, args):
+    if self.need_login():
+      self.session.lcd(args)
+
+  # 创建文件夹
+  def c_mkdir(self, args):
+    if self.need_login():
+      self.session.mkdir(args)
+
+  # 删除文件夹
+  def c_rmdir(self, args):
+    if self.need_login():
+      self.session.rmdir(args)
+
+  # 列出文件
+  def c_ls(self, args):
+    if self.need_login():
+      self.session.ls()
 
   # 切換工作目錄
   def c_cd(self, args):
@@ -235,7 +394,7 @@ class CommandHandler():
       self.session = False
 
   # 退出程序
-  def c_exit(self):
+  def c_exit(self, args):
     exit()
 
   # 需要登录
@@ -264,7 +423,7 @@ class CommandHandler():
     print('Type command to start')
     while True:
       try:
-        com = input('gqftp%s ' % ('-' if self.session else '>'))
+        com = input('gqftp%s ' % (':%s$' % self.session.working_directory.wd if self.session else '>'))
       except EOFError:
         exit()
       command = com.split(' ')[0]

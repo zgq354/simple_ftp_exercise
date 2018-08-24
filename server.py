@@ -145,8 +145,11 @@ class Conn(threading.Thread):
         path = Path(os.getcwd())
         path.cwd(self.wd.wd)
         path.cwd(args)
-        os.rmdir(path.getAbs())
-        self.message(250, "\"%s\" directory removed" % path.wd)
+        if os.path.exists(path.getAbs()):
+          os.rmdir(path.getAbs())
+          self.message(250, "\"%s\" directory removed" % path.wd)
+        else:
+          self.message(431, "No such directory")
     elif cmd == 'RETR':
       if self.need_login():
         self.send_file(args)
@@ -175,7 +178,7 @@ class Conn(threading.Thread):
     with open(file, 'wb') as f:
       while self.running:
         data = s.recv(2048)
-        if len(data) == 0:
+        if not data:
           break
         f.write(data)
     # 传完即关闭连接
@@ -197,7 +200,7 @@ class Conn(threading.Thread):
     with open(file, 'rb') as f:
       while self.running:
         data = f.read(2048)
-        if len(data) == 0:
+        if not data:
           break  
         s.send(data)
     # 传完即关闭连接
