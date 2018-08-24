@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 import socket
 import re
+import os
 
 class FTPSession(object):
   def __init__(self):
@@ -13,12 +14,24 @@ class FTPSession(object):
     self.send('PWD', '')
     code, text = self.get_result()
     if code == 257:
-      self.working_directory = self.parse_path(text)
+      self.working_directory = Path(self.parse_path(text), os.getcwd())
   
   # 打印工作目录
   def pwd(self):
     self.get_wd()
-    print(self.working_directory)
+    print(self.working_directory.wd)
+
+  # 切換工作目錄
+  def cd(self, new_dir):
+    path = Path(self.working_directory.wd)
+    path.cwd(new_dir)
+    # path.wd
+    self.send('CWD', path.wd)
+    code, text = self.get_result()
+    if code == 250:
+      self.working_directory.cwd(self.parse_path(text))
+    elif code == 431:
+      self.log("No such directory", 3)
 
   # 传输模式设定
   def mode(self, mode):
@@ -48,6 +61,8 @@ class FTPSession(object):
       # 登录成功
       if code == 230:
         self.log('Login successful', 2)
+        # 获取工作目录
+        self.get_wd()
         return True
     # 登录失败
     self.log('Authentication failed.')
@@ -130,6 +145,44 @@ class FTPSession(object):
       return match.group(1)[1:-1]
     return ''
 
+# 处理路径的类
+class Path():
+  def __init__(self, wd = '/', base = ''):
+    self.base = base
+    self.wd = wd
+
+  # 切换工作目录
+  def cwd(self, new_wd):
+    if new_wd[:1] == '/':
+      self.wd = new_wd
+    elif new_wd[:2] == './':
+      self.wd += new_wd[2:]
+    elif new_wd[:2] == '..':
+      if self.wd[-1:] == '/':
+        self.wd = self.wd[:-1]
+      self.wd = '/'.join(self.wd.split('/')[:-1])
+      new_wd = new_wd[2:]
+      if new_wd[:1] != '/':
+        new_wd = '/' + new_wd
+      self.wd += new_wd
+    else:
+      if (self.wd[-1] == '/' and new_wd[:1] == '/'):
+        self.wd += new_wd[1:]
+      elif (self.wd[-1] != '/' and new_wd[:1] != '/'):
+        self.wd += '/' + new_wd
+      else:
+        self.wd += new_wd
+    print('wd:', self.wd)
+  
+  # 获得相对路径
+  def get(self):
+    return self.wd
+
+  # 获取绝对路径
+  def getAbs(self):
+    return self.base + self.wd
+
+
 class CommandHandler():
   def __init__(self):
     self.handler = {}
@@ -140,9 +193,15 @@ class CommandHandler():
     self.register('close', self.c_close)
     self.register('type', self.c_type)
     self.register('pwd', self.c_pwd)
+    self.register('cd', self.c_cd)
     self.register('exit', self.c_exit)
     self.register('echo', print)
     self.register('cat', lambda a: print(r"flag{1t's_a_b1ackd00r}") if a == 'flag.txt' else False)
+
+  # 切換工作目錄
+  def c_cd(self, args):
+    if self.need_login():
+      self.session.cd(args)
 
   # 打印工作目录
   def c_pwd(self, args):
@@ -205,7 +264,7 @@ class CommandHandler():
     print('Type command to start')
     while True:
       try:
-        com = input('%s ' % ('-' if self.session else '>'))
+        com = input('gqftp%s ' % ('-' if self.session else '>'))
       except EOFError:
         exit()
       command = com.split(' ')[0]

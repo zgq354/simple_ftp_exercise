@@ -119,8 +119,14 @@ class Conn(threading.Thread):
         self.message(257, "\"%s\" is the current directory." % self.wd.wd)
     elif cmd == 'CWD':
       if self.need_login():
-        self.wd.cwd(args)
-        self.message(250, "\"%s\" is the current directory." % self.wd.wd)
+        path = Path(os.getcwd())
+        path.cwd(self.wd.wd)
+        path.cwd(args)
+        if not os.path.exists(path.getAbs()):
+          self.message(431, "No such directory")
+        else:
+          self.wd.cwd(args)
+          self.message(250, "\"%s\" is the current directory." % self.wd.wd)
     elif cmd == 'PASV':
       if self.need_login():
         self.init_datafd()
