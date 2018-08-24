@@ -95,6 +95,7 @@ class Conn(threading.Thread):
     self.username = False
     self.passwd = False
     self.wd = Path(os.getcwd())
+    self.mode = 'I'
 
   # FTP 命令处理
   def pocess_command(self, cmd, args):
@@ -111,6 +112,7 @@ class Conn(threading.Thread):
       self.passwd = args
       self.login()
     elif cmd == "TYPE":
+      self.mode = args
       self.message(200, "ok")  
     elif cmd == 'PWD':
       if self.need_login():
@@ -139,8 +141,62 @@ class Conn(threading.Thread):
         path.cwd(args)
         os.rmdir(path.getAbs())
         self.message(250, "\"%s\" directory removed" % path.wd)
+    elif cmd == 'RETR':
+      if self.need_login():
+        self.send_file(args)
+    elif cmd == 'STOR':
+      if self.need_login():
+        self.upload_file(args)
+    elif cmd == 'DELE':
+      if self.need_login():
+        path = Path(os.getcwd())
+        path.cwd(self.wd.wd)
+        path.cwd(args)
+        os.remove(path.getAbs())
+        self.message(250, 'file removed')
     else:
       self.message(500, 'Syntax error, command unrecognized.')
+
+  # 上传文件
+  def upload_file(self, file_path):
+    path = Path(os.getcwd())
+    path.cwd(self.wd.wd)
+    path.cwd(file_path)
+    file = path.getAbs()
+    s, addr = self.data_fd.accept()
+    print('data: receive from ', addr)
+    self.message(150, 'start receiving data')
+    with open(file, 'wb') as f:
+      while self.running:
+        data = s.recv(2048)
+        if len(data) == 0:
+          break
+        f.write(data)
+    # 传完即关闭连接
+    self.data_fd.close()
+    self.message(226, 'Transfer complete')
+
+  # 发送文件
+  def send_file(self, file_path):
+    path = Path(os.getcwd())
+    path.cwd(self.wd.wd)
+    path.cwd(file_path)
+    file = path.getAbs()
+    if not os.path.isfile(file):
+      self.message(550, "failed")  
+      return
+    s, addr = self.data_fd.accept()
+    print('data: send to ', addr)
+    self.message(150, 'start sending data')
+    with open(file, 'rb') as f:
+      while self.running:
+        data = f.read(2048)
+        if len(data) == 0:
+          break  
+        s.send(data)
+    # 传完即关闭连接
+    self.data_fd.close()
+    self.message(226, 'Transfer complete')
 
   # 列出文件夹
   def send_list(self):
