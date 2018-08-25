@@ -375,7 +375,7 @@ class CommandHandler():
   # 连接FTP服务器
   def c_connect(self, args):
     # print(args)
-    args = "ftp://admin:password@127.0.0.1:22333"
+    # args = "ftp://admin:password@127.0.0.1:22333"
     matchObj = re.match(r'ftp://(.+?):(.*?)@(.*):(\d+)', args)
     if not matchObj:
       print('[-] URL not valid.')
